@@ -1,0 +1,45 @@
+.program pico_scoppy_rising_edge_trigger
+
+    ;
+    ; A value in the TXFIFO tells us its time to arm.
+    ; Block until then.
+    ;
+    pull block
+
+high:
+    jmp pin high [1]
+    ; fall thru to low
+
+low:
+    jmp pin trigger
+    jmp low
+
+trigger:
+    irq nowait 0
+    ; wrap back to pull block
+
+;============================================
+
+.program pico_scoppy_falling_edge_trigger
+
+    ;
+    ; A value in the TXFIFO tells us its time to arm.
+    ; Block until then.
+    ;
+    pull block
+
+low:
+    ; assume we are low. need to be high before we can detect falling edge
+    jmp pin high [1]
+    ; still low, keep checking for high
+    jmp low
+
+high:
+    ; if still high, keep trying
+    jmp pin high
+    ; now low, fall through
+
+trigger:
+    irq nowait 0
+    ; wrap back to pull block
+

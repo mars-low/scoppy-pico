@@ -1,0 +1,102 @@
+.program pico_scoppy_triggerer
+
+    ;
+    ; A value in the TXFIFO tells us its time to arm.
+    ; Block until then.
+    ;
+    pull block
+
+high:
+    jmp pin high [1]
+    ; fall thru to low
+
+low:
+    jmp pin trigger
+    jmp low
+
+trigger:
+    irq nowait 0
+    ; wrap back to pull block
+
+.program freddy
+
+look_for_trigger_point:
+    ; save the level of the trigger pin(s)
+    ; NB. we run this SM at a higher rate than the TriggerCondition state machines
+    ; so that we don't have to worry about synchronising reading the trigger output pins
+    ; ('cos we're running so fast we should see any change)
+    ; We invert the bits to make it easy to check that ALL pins are high
+    ; eg. if 3 trigger condition pins:
+    ;   000 becomes: 111 - non-zero so trigger point not found
+    ;   101 becomes: 010 - non-zero so trigger point not found
+    ;   111 becomes: 000 - zero so trigger point found - yay
+    mov y ~ pins
+
+    ; if y is non-zero then we haven't found a trigger point and so we
+    ; keep looking
+    jmp y--, look_for_trigger_point
+
+    ; OK. We've found the trigger point. Tell the main program.
+    irq wait 0
+
+    ; Nothing more to do
+    ; NB. To save an instruction we could wrap back to 'pull block'. The main program
+    ; shouldn't add anything more the TXFIFO so we would then block indefinitely.
+
+hang:
+    jmp hang
+
+;=============================================================
+.program pico_scoppy_triggerer_test
+
+    irq nowait 0
+hang:
+    jmp hang
+
+;=============================================================
+.program blah
+
+; Prepare for non blocking pull with empty fifo - see below
+set x, 0
+
+check_arm_status:
+    ; Non blocking PULL. If the TXFIFO is empty it is the same 
+    ; as MOV OSR, X (ie. OSR will contain 0 after the instruction)
+    ; If the program has pushed a non-zero value into TXFIFO it means
+    ; OSR will contain a non-zero value
+    pull noblock
+
+    ; need to move osr into x so we can check arm check_arm_status
+    mov x, osr
+
+    ; if the program hasn't told us to start looking for trigger points
+    ; we just check again (jmp to check_arm_status)
+    jmp !x, check_arm_status
+
+    ; The main program has told us to arm so
+    ; now start looking for trigger points
+
+    ; trigger on high
+    ; if more than one pin is mapped then all must be high
+
+look_for_trigger_point:
+    ; save the level of the trigger pin(s)
+    ; NB. this should occur on the same cycle as the sampler captures the sample
+    ; We invert the bits to make it easy to check that ALL pins are high
+    ; eg. if 3 pins:
+    ;   000 becomes: 111 - non-zero so trigger point not found
+    ;   101 becomes: 010 - non-zero so trigger point not found
+    ;   111 becomes: 000 - zero so trigger point found - yay
+    mov y ~ pins
+
+    ; if x is non-zero then we haven't found a trigger point and
+    ; jump back to 'look_for_trigger_point'
+    jmp y--, look_for_trigger_point
+
+    ; OK. We've found the trigger point. Tell the main program.
+    irq nowait 0
+
+hang:
+    jmp hang
+
+
